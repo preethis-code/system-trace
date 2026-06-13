@@ -109,6 +109,17 @@ pub fn run() {
             // Start the always-on collector.
             collector::spawn(app.handle().clone(), db, shared);
 
+            // Hide the window on autostart-from-boot launches (the autostart
+            // plugin passes "--minimized") or when the user picked
+            // "Start minimized to tray" in Settings. The collector is already
+            // spinning at this point, so tracing continues either way.
+            let launched_minimized = std::env::args().any(|a| a == "--minimized");
+            if launched_minimized || settings.start_minimized {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
+
             // System tray with Show / Quit.
             let show = MenuItemBuilder::with_id("show", "Show System Trace").build(app)?;
             let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
@@ -131,6 +142,20 @@ pub fn run() {
                 .build(app)?;
 
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // The whole point of System Trace is to keep tracing in the
+            // background even after the user dismisses the window. Without
+            // this handler, clicking the X tears the window down and Tauri
+            // exits the process, which kills the collector. Hide the main
+            // window instead and rely on the tray's Quit item for a real
+            // exit. Child windows (none today) still close normally.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_today_overview,

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, ShieldCheck, Activity, Sparkles } from "lucide-react";
+import { ArrowRight, ShieldCheck, Activity, Sparkles, PowerCircle } from "lucide-react";
 import { setSetting } from "../lib/api";
 
 interface Props {
@@ -31,11 +31,18 @@ const STEPS: Step[] = [
     body:
       "Limits, focus mode, and break reminders are here when you want them - quiet when you don't. Categories are neutral by default; turn on productivity scoring in Settings if you want a Focus Score. You can pause tracking at any moment from the top bar.",
   },
+  {
+    icon: PowerCircle,
+    title: "Always on, quietly",
+    body:
+      "System Trace works best when it runs in the background. With your permission, it will start when you sign in to your computer and live in the system tray. Closing the window keeps it tracking; only quitting from the tray menu stops it. You can change this any time in Settings.",
+  },
 ];
 
 export function Onboarding({ onDone }: Props) {
   const [stepIndex, setStepIndex] = useState(0);
   const [finishing, setFinishing] = useState(false);
+  const [runOnStartup, setRunOnStartup] = useState(true);
   const step = STEPS[stepIndex];
   const Icon = step.icon;
   const isLast = stepIndex === STEPS.length - 1;
@@ -43,6 +50,11 @@ export function Onboarding({ onDone }: Props) {
   async function finish() {
     setFinishing(true);
     try {
+      // Apply the user's autostart choice. When on, also start minimized to
+      // tray on boot so the window doesn't pop up on every sign-in.
+      const flag = runOnStartup ? "true" : "false";
+      await setSetting("launch_at_login", flag);
+      await setSetting("start_minimized", flag);
       await setSetting("onboarding_complete", "true");
     } catch {
       // Even if the save fails the user has seen the flow; let them in.
@@ -67,6 +79,21 @@ export function Onboarding({ onDone }: Props) {
 
         <h1 className="mt-6 text-h1 text-text">{step.title}</h1>
         <p className="mt-4 text-body text-text-muted">{step.body}</p>
+
+        {isLast ? (
+          <label className="mt-5 flex cursor-pointer items-center gap-3 rounded-md border border-border bg-bg px-4 py-3">
+            <input
+              type="checkbox"
+              checked={runOnStartup}
+              onChange={(e) => setRunOnStartup(e.target.checked)}
+              className="h-4 w-4 accent-accent"
+            />
+            <span className="text-body text-text">
+              Run System Trace when I sign in to my computer
+              <span className="ml-1 text-label text-text-muted">(recommended)</span>
+            </span>
+          </label>
+        ) : null}
 
         <div className="mt-8 flex items-center justify-between">
           <div className="flex gap-1.5" aria-hidden>
