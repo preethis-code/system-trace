@@ -93,7 +93,7 @@ export function Settings() {
 
   function flash(msg: string) {
     setStatus(msg);
-    window.setTimeout(() => setStatus(null), 3000);
+    window.setTimeout(() => setStatus(null), 4000);
   }
 
   function setBool(key: SettingKey & keyof SettingsModel, val: boolean) {
@@ -224,7 +224,11 @@ export function Settings() {
   return (
     <div className="mx-auto max-w-3xl space-y-6 pb-10">
       {status ? (
-        <div className="rounded-md border border-accent/40 bg-accent/10 px-4 py-2 text-body text-text">
+        <div
+          className="fixed bottom-6 left-1/2 z-40 -translate-x-1/2 rounded-md border border-accent/40 bg-surface px-4 py-2 text-body text-text shadow-e2 dark:shadow-e2-dark"
+          role="status"
+          aria-live="polite"
+        >
           {status}
         </div>
       ) : null}
