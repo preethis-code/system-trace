@@ -9,6 +9,44 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 Nothing yet. New work in progress lives here until the next tagged release.
 
+## [0.4.1] - 2026-06-14 - Critical tracking fix + hardening
+
+A deep code review caught a critical regression and a batch of robustness bugs.
+
+### Fixed
+
+- **CRITICAL: activity tracking was disabled since v0.3.0.** The call that
+  starts the background collector thread (`collector::spawn`) was accidentally
+  removed in the v0.3.0 commit, so since then **nothing was tracked** - no
+  events, no live state, and (in 0.4.0) none of the collector-loop features
+  (media/lock detection, periodic encrypted snapshots). Restored. (Unit tests
+  exercise the session-builder directly, so they didn't catch the missing
+  spawn.)
+- **Encryption key is never silently replaced.** If the OS key store errors
+  transiently (locked / not ready) while an encrypted database exists, the app
+  no longer mints a fresh key (which would make the data permanently
+  undecryptable); it fails the launch safely and recovers on a later start.
+- **A corrupt/undecryptable snapshot no longer bricks the app.** Instead of
+  panicking on every launch, the unreadable file is quarantined and the app
+  starts fresh.
+- **Migration is safer.** The legacy plaintext database is only removed after
+  the first encrypted snapshot succeeds, so a failed snapshot can't leave you
+  with neither a readable plaintext file nor a good encrypted one.
+- **Restore now persists immediately.** `restore_database` writes an encrypted
+  snapshot right after restoring, so a crash can't lose the restore.
+- **App icons no longer render invisible.** Icons whose source had no alpha
+  channel were drawn fully transparent on Windows; they're now treated as
+  opaque. (Plus a macOS bitmap-rep leak and a dead `ReleaseDC` cleaned up.)
+- **Bedtime grayscale is reliably reverted on quit** even if the apply worker
+  hadn't finished (intent is recorded immediately).
+- **macOS window-title lookup only runs when title capture is on**, avoiding a
+  per-second Accessibility round-trip (and permission spam) otherwise.
+- Smaller fixes: distraction nudge stops counting an app the moment it's
+  re-categorized as non-distracting; Windows desktop-name parsing reads only up
+  to the NUL terminator; the strict-limit overlay unsubscribes cleanly; per-app
+  goal input rejects a blank/zero value; per-app icon RGBA is clamped to the
+  canvas buffer.
+
 ## [0.4.0] - 2026-06-14 - Gap-closure features
 
 A broad feature release closing the largest remaining gaps: real activity

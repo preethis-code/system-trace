@@ -45,7 +45,10 @@ function loadIcon(appKey: string): Promise<string> {
       const ctx = canvas.getContext("2d");
       if (!ctx) return "";
       const img = ctx.createImageData(icon.width, icon.height);
-      img.data.set(new Uint8ClampedArray(icon.rgba));
+      // Clamp to the canvas buffer length: some platforms pad rows, so the
+      // source RGBA can be longer than width*height*4 (set() throws if longer).
+      const src = new Uint8ClampedArray(icon.rgba);
+      img.data.set(src.subarray(0, img.data.length));
       ctx.putImageData(img, 0, 0);
       return canvas.toDataURL("image/png");
     })

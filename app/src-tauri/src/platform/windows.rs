@@ -134,8 +134,10 @@ impl Watcher for WinWatcher {
                     if !ok {
                         return false;
                     }
-                    let name = String::from_utf16_lossy(&buf);
-                    let name = name.trim_end_matches('\0');
+                    // The name is null-terminated; decode only up to the first
+                    // NUL rather than the whole 256-wide buffer.
+                    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+                    let name = String::from_utf16_lossy(&buf[..len]);
                     !name.eq_ignore_ascii_case("Default")
                 }
                 // Couldn't open the input desktop: the secure desktop is active.

@@ -117,9 +117,33 @@ pub fn run() {
             let (conn, enc) = if is_test {
                 (db::open(&db_path).expect("failed to open database"), None)
             } else {
-                let key = crypto::get_or_create_key(&dir.join("db.key"));
-                let conn =
-                    db::open_encrypted(&enc_path, &key, &db_path).expect("failed to open database");
+                let data_exists = enc_path.exists();
+                // If the key store errors while encrypted data exists, fail the
+                // launch safely (do NOT mint a new key - that would lose the
+                // data). It recovers on a later launch once the keyring is up.
+                let key = match crypto::load_or_create_key(&dir.join("db.key"), data_exists) {
+                    Ok(k) => k,
+                    Err(e) => return Err(e.into()),
+                };
+                // If the snapshot can't be decrypted/loaded (wrong key or
+                // corruption), quarantine it and start fresh so the app still
+                // launches instead of panicking on every boot.
+                let conn = match db::open_encrypted(&enc_path, &key, &db_path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::error!(
+                            "could not open encrypted database ({e}); quarantining it and starting fresh"
+                        );
+                        if enc_path.exists() {
+                            let _ = std::fs::rename(
+                                &enc_path,
+                                enc_path.with_extension("enc.corrupt"),
+                            );
+                        }
+                        db::open_encrypted(&enc_path, &key, &db_path)
+                            .expect("failed to open a fresh database")
+                    }
+                };
                 (conn, Some((enc_path.clone(), key)))
             };
 
@@ -157,17 +181,22 @@ pub fn run() {
                 tracking_paused,
             )));
 
-            // Persist the initial encrypted snapshot, then remove any legacy
-            // plaintext database we just migrated from so it no longer sits
-            // unencrypted on disk.
+            // Persist the initial encrypted snapshot. Only AFTER it succeeds do
+            // we remove the legacy plaintext database we migrated from - so a
+            // failed snapshot never leaves us with neither a readable plaintext
+            // file nor a good encrypted one.
             if let Some((ref path, ref key)) = enc {
-                if let Err(e) = db::snapshot_encrypted(&conn, path, key) {
-                    log::warn!("initial encrypted snapshot failed: {e}");
-                }
-                if db_path.exists() {
-                    let _ = std::fs::remove_file(&db_path);
-                    let _ = std::fs::remove_file(db_path.with_extension("sqlite-wal"));
-                    let _ = std::fs::remove_file(db_path.with_extension("sqlite-shm"));
+                match db::snapshot_encrypted(&conn, path, key) {
+                    Ok(()) => {
+                        if db_path.exists() {
+                            let _ = std::fs::remove_file(&db_path);
+                            let _ = std::fs::remove_file(db_path.with_extension("sqlite-wal"));
+                            let _ = std::fs::remove_file(db_path.with_extension("sqlite-shm"));
+                        }
+                    }
+                    Err(e) => log::error!(
+                        "initial encrypted snapshot failed ({e}); keeping the plaintext database"
+                    ),
                 }
             }
 
@@ -179,6 +208,12 @@ pub fn run() {
                 db_path: db_path.clone(),
                 enc,
             });
+
+            // Start the always-on background collector: window/idle/media/lock
+            // sampling, batched event flushes, limits/wellbeing, and the
+            // periodic encrypted snapshot. This call was accidentally dropped in
+            // v0.3.0, which silently disabled ALL activity tracking - restore it.
+            collector::spawn(app.handle().clone(), db.clone(), shared.clone());
 
             // Register the global pause/resume hotkey (default Ctrl+Alt+P).
             // Toggling shared.paused is enough: the collector reads it every

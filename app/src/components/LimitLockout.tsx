@@ -18,11 +18,13 @@ export function LimitLockout() {
   const [hit, setHit] = useState<LimitReached | null>(null);
 
   useEffect(() => {
-    let un = () => {};
+    let unlisten: (() => void) | undefined;
     onLimitReached((l) => {
       if (l.strictness === "strict") setHit(l);
-    }).then((u) => (un = u));
-    return () => un();
+    }).then((u) => {
+      unlisten = u;
+    });
+    return () => unlisten?.();
   }, []);
 
   if (!hit) return null;

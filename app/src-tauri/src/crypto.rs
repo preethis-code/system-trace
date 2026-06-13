@@ -20,38 +20,68 @@ const KEYRING_SERVICE: &str = "com.systemtrace.app";
 const KEYRING_USER: &str = "db-encryption-key";
 const NONCE_LEN: usize = 24;
 
-/// Load the database key from the OS keyring, generating and storing a fresh one
-/// on first run. Falls back to a user-only key file beside the data when the
-/// keyring is unavailable.
-pub fn get_or_create_key(fallback_path: &Path) -> [u8; 32] {
-    if let Some(k) = keyring_get() {
-        return k;
+/// Load the database key.
+///
+/// `data_exists` is whether an encrypted snapshot (or key file) already exists.
+/// This matters for safety: if the keyring **errors** (locked / not ready /
+/// transient) while encrypted data exists, we must NOT mint a fresh key - that
+/// would overwrite the only key and make the data permanently undecryptable. In
+/// that case we return `Err` so the caller can fail safely and recover on a
+/// later launch. A new key is only created when there is genuinely no key and
+/// no existing data (a fresh install).
+pub fn load_or_create_key(fallback_path: &Path, data_exists: bool) -> Result<[u8; 32], String> {
+    match keyring_get() {
+        Ok(Some(k)) => return Ok(k),
+        Ok(None) => {} // genuinely no entry yet
+        Err(e) => {
+            if data_exists || fallback_path.exists() {
+                return Err(format!(
+                    "secure key store is unavailable ({e}); not creating a new key \
+                     because encrypted data already exists. Try launching again."
+                ));
+            }
+            // No data yet: a keyring error is non-fatal; fall through to create.
+        }
     }
+
     if let Ok(bytes) = std::fs::read(fallback_path) {
         if bytes.len() == 32 {
             let mut k = [0u8; 32];
             k.copy_from_slice(&bytes);
-            return k;
+            return Ok(k);
         }
     }
+
+    // No key found anywhere. If encrypted data exists, we cannot decrypt it -
+    // surface that rather than silently minting a key that won't work.
+    if data_exists {
+        return Err("encrypted data exists but no decryption key was found".into());
+    }
+
     let mut key = [0u8; 32];
     rand::rngs::OsRng.fill_bytes(&mut key);
     if !keyring_set(&key) {
         let _ = write_key_file(fallback_path, &key);
     }
-    key
+    Ok(key)
 }
 
-fn keyring_get() -> Option<[u8; 32]> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).ok()?;
-    let hex = entry.get_password().ok()?;
-    let bytes = from_hex(&hex)?;
-    if bytes.len() == 32 {
-        let mut k = [0u8; 32];
-        k.copy_from_slice(&bytes);
-        Some(k)
-    } else {
-        None
+/// `Ok(Some(key))` = found, `Ok(None)` = no entry yet, `Err` = keyring error
+/// (locked / unavailable / corrupt entry) - which the caller must NOT treat as
+/// "no key".
+fn keyring_get() -> Result<Option<[u8; 32]>, String> {
+    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(|e| e.to_string())?;
+    match entry.get_password() {
+        Ok(hex) => match from_hex(&hex) {
+            Some(bytes) if bytes.len() == 32 => {
+                let mut k = [0u8; 32];
+                k.copy_from_slice(&bytes);
+                Ok(Some(k))
+            }
+            _ => Err("stored key is malformed".into()),
+        },
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(e) => Err(e.to_string()),
     }
 }
 

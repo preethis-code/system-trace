@@ -182,11 +182,15 @@ unsafe fn macos_audio_running() -> bool {
 }
 
 #[derive(Default)]
-pub struct MacWatcher;
+pub struct MacWatcher {
+    capture_titles: bool,
+}
 
 impl MacWatcher {
     pub fn new() -> Self {
-        MacWatcher
+        MacWatcher {
+            capture_titles: false,
+        }
     }
 }
 
@@ -235,11 +239,16 @@ impl Watcher for MacWatcher {
                     nsstring_to_string(p)
                 }
             };
-            // Frontmost window title via the Accessibility API. Returns None
-            // unless the user granted Accessibility permission; the collector
-            // only keeps it when title capture is enabled anyway.
-            let pid: i32 = msg_send![app, processIdentifier];
-            let title = ax_window_title(pid);
+            // Frontmost window title via the Accessibility API - only when the
+            // user enabled title capture, since the AX round-trip is relatively
+            // expensive to do every tick (and prompts/denies without the
+            // Accessibility permission).
+            let title = if self.capture_titles {
+                let pid: i32 = msg_send![app, processIdentifier];
+                ax_window_title(pid)
+            } else {
+                None
+            };
             Some(ActiveWindow {
                 app_name: app_name.unwrap_or_else(|| app_key.clone()),
                 app_key,
@@ -284,5 +293,9 @@ impl Watcher for MacWatcher {
             let _: () = msg_send![dict, release];
             locked
         }
+    }
+
+    fn set_capture_titles(&mut self, on: bool) {
+        self.capture_titles = on;
     }
 }

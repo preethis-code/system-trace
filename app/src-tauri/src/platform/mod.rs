@@ -35,6 +35,10 @@ pub trait Watcher: Send {
     fn session_locked(&mut self) -> bool {
         false
     }
+    /// Tell the watcher whether the user enabled window-title capture, so a
+    /// watcher whose title lookup is expensive (e.g. the macOS Accessibility
+    /// API) can skip it when off. Default: ignore (cheap title lookups).
+    fn set_capture_titles(&mut self, _on: bool) {}
 }
 
 #[cfg(target_os = "windows")]

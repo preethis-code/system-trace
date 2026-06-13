@@ -32,7 +32,7 @@ export function AppGoals() {
   }, []);
 
   async function addGoal() {
-    if (appId === "") return;
+    if (appId === "" || !Number.isFinite(mins) || mins <= 0) return;
     await setAppGoal({ app_id: Number(appId), daily_ms: mins * 60_000, kind });
     reload();
     setAppId("");

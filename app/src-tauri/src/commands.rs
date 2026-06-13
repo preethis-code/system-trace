@@ -279,6 +279,12 @@ pub fn restore_database(state: State<AppState>, path: String) -> R<()> {
     // The backup may be from an older version; bring its schema up to date so
     // newer columns, tables, and settings exist.
     db::migrate(&conn)?;
+    // Persist the restored data to the encrypted snapshot immediately, so a
+    // crash before the next periodic snapshot can't lose the restore (the live
+    // DB is in memory). Mirrors wipe_all_data.
+    if let Some((enc_path, key)) = &state.enc {
+        let _ = db::snapshot_encrypted(&conn, enc_path, key);
+    }
     Ok(())
 }
 

@@ -10,8 +10,8 @@ pub type Rgba = (u32, u32, Vec<u8>);
 pub fn extract_icon_rgba(path: &str) -> Option<Rgba> {
     use windows::core::PCWSTR;
     use windows::Win32::Graphics::Gdi::{
-        CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, ReleaseDC, BITMAP,
-        BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HDC,
+        CreateCompatibleDC, DeleteDC, DeleteObject, GetDIBits, GetObjectW, BITMAP, BITMAPINFO,
+        BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HDC,
     };
     use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON};
     use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, GetIconInfo, ICONINFO};
@@ -74,9 +74,22 @@ pub fn extract_icon_rgba(path: &str) -> Option<Rgba> {
             );
             let _ = DeleteDC(hdc);
             if scan != 0 {
-                // GetDIBits returns BGRA; swap to RGBA for the canvas.
+                // GetDIBits returns BGRA; swap to RGBA for the canvas, noting
+                // whether the source actually carried an alpha channel.
+                let mut any_alpha = false;
                 for px in buf.chunks_exact_mut(4) {
                     px.swap(0, 2);
+                    if px[3] != 0 {
+                        any_alpha = true;
+                    }
+                }
+                // Some icons (older / 24bpp sources) come back with an all-zero
+                // alpha channel, which would render fully transparent. Treat
+                // that as fully opaque so the icon is visible.
+                if !any_alpha {
+                    for px in buf.chunks_exact_mut(4) {
+                        px[3] = 255;
+                    }
                 }
                 out = Some((w, h, buf));
             }
@@ -85,7 +98,6 @@ pub fn extract_icon_rgba(path: &str) -> Option<Rgba> {
         let _ = DeleteObject(icon_info.hbmColor);
         let _ = DeleteObject(icon_info.hbmMask);
         let _ = DestroyIcon(hicon);
-        let _ = ReleaseDC(None, HDC::default());
         out
     }
 }
@@ -146,10 +158,13 @@ pub fn extract_icon_rgba(path: &str) -> Option<Rgba> {
 
         let data: *const u8 = msg_send![rep, bitmapData];
         if data.is_null() {
+            let _: () = msg_send![rep, release];
             return None;
         }
         let len = (SIZE * SIZE * 4) as usize;
         let buf = std::slice::from_raw_parts(data, len).to_vec();
+        // Balance the +1 from alloc/init so we don't leak the bitmap rep.
+        let _: () = msg_send![rep, release];
         Some((SIZE, SIZE, buf))
     }
 }

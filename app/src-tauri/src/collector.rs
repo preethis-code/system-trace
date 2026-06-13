@@ -437,6 +437,7 @@ mod runtime {
                         s.paused
                     };
                     builder.set_config(thr, cap);
+                    watcher.set_capture_titles(cap);
 
                     let mut cur_key: Option<String> = None;
                     let mut cur_name: Option<String> = None;
@@ -518,14 +519,21 @@ mod runtime {
                     let want_grayscale = in_bed && well.bedtime_grayscale_enabled;
                     if want_grayscale != grayscale_active {
                         // Hand the request to the serialized worker (set above):
-                        // it runs the blocking OS call off this loop and records
-                        // what it applied into shared.grayscale_applied for the
-                        // exit handler. If the worker is gone, fall back to an
-                        // inline best-effort apply.
+                        // it runs the blocking OS call off this loop. If the
+                        // worker is gone, fall back to an inline best-effort
+                        // apply.
                         if gray_tx.send(want_grayscale).is_err() {
                             let _ = crate::grayscale::set_grayscale(want_grayscale);
                         }
                         grayscale_active = want_grayscale;
+                        // Record the intent here (not only in the worker, which
+                        // writes it after the blocking apply) so the exit handler
+                        // still reverts even if the worker hasn't finished yet.
+                        // Over-reverting (when an apply failed) is a harmless
+                        // no-op.
+                        if let Ok(mut s) = shared.lock() {
+                            s.grayscale_applied = want_grayscale;
+                        }
                     }
                     if matches!(new_state, CollectorState::Active) {
                         active_run_ms += delta;
@@ -571,11 +579,18 @@ mod runtime {
                         // and otherwise at most every 10s so a category edit
                         // while the same app stays in front is picked up.
                         if app_changed || now - distract_last_check >= 10_000 {
+                            let was = distract_is_distracting;
                             distract_is_distracting = match cur {
                                 Some(key) => app_is_distracting(&db, key),
                                 None => false,
                             };
                             distract_last_check = now;
+                            // If the foreground app was just re-categorized to
+                            // non-distracting, stop counting so we don't fire a
+                            // stale nudge for it.
+                            if was && !distract_is_distracting {
+                                distract_run_ms = 0;
+                            }
                         }
                         if let Some(key) = cur {
                             if distract_is_distracting {
