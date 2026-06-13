@@ -85,15 +85,21 @@ The marketing website lives in a separate repository
   Day view shows that day's hourly chart, top apps, categories, and longest session;
   week and month views show the daily-usage bars and aggregates for the picked period.
   Left and right arrow keys step through history.
-- **Neutral categories:** group apps your way, with optional productivity scoring.
+- **Search history:** find when you used an app across all tracked time, grouped by day.
+- **Neutral categories:** group apps your way, with an optional Focus Score.
 - **Per-app daily limits:** set a cap and choose how strict the nudge is when you reach it.
-- **Focus mode:** start a focus session that blocks distracting apps and websites.
-- **Wellbeing:** break reminders to rest your eyes, plus quiet hours that silence nudges.
+- **Focus mode:** focus sessions with a live countdown and a note for what you worked on;
+  block distracting apps and websites, with optional active-hours schedules.
+- **Global pause hotkey:** toggle tracking from anywhere with **Ctrl + Alt + P**.
+- **Wellbeing:** break reminders, quiet hours, category goals with daily streaks, and
+  distraction nudges after sustained time on a distracting app.
 - **Summary notifications:** off, daily, weekly, or both - and they catch up if the app was
   closed across a boundary.
-- **Privacy controls:** export to CSV or JSON, one-click wipe, app exclusions, and
-  window-title capture that is off by default.
-- **Dark and light themes** using the "Signal" palette. lucide-react icons, no emoji.
+- **Privacy controls:** export to CSV or JSON (everything or a date range), one-click
+  backup and restore, one-click wipe, app exclusions, and window-title capture off by
+  default.
+- **Make it yours:** dark and light themes plus Signal / Slate / Solar / Cocoa accent
+  palettes. lucide-react icons, no emoji.
 
 ## Installation
 
